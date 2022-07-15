@@ -1,8 +1,10 @@
 use serde::Deserialize;
 use std::{
     error::Error,
-    io::{Read, Write},
-    net::{SocketAddr, TcpListener, TcpStream, Ipv4Addr, Ipv6Addr},
+    fs,
+    io::{self, Read, Write},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream},
+    thread,
 };
 
 fn main() {
@@ -30,11 +32,11 @@ fn main() {
             }
         };
 
-        std::thread::spawn(move || handle_connection(client_stream, client_address));
+        thread::spawn(move || handle_connection(client_stream, client_address));
     }
 }
 
-fn read_message(client_stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
+fn read_message(client_stream: &mut TcpStream) -> io::Result<Vec<u8>> {
     let mut message: Vec<u8> = vec![];
 
     loop {
@@ -64,8 +66,8 @@ fn parse_request<'a, 'b>(
 
 fn handle_connection(mut client_stream: TcpStream, client_address: SocketAddr) {
     let is_localhost = match client_address.ip() {
-        std::net::IpAddr::V4(ip) => ip == Ipv4Addr::LOCALHOST,
-        std::net::IpAddr::V6(ip) => ip == Ipv6Addr::LOCALHOST,
+        IpAddr::V4(ip) => ip == Ipv4Addr::LOCALHOST,
+        IpAddr::V6(ip) => ip == Ipv6Addr::LOCALHOST,
     };
 
     if !is_localhost {
@@ -118,7 +120,7 @@ fn handle_connection(mut client_stream: TcpStream, client_address: SocketAddr) {
             }
 
             match serde_json::from_str::<'_, GetRequest>(request_data.as_str()) {
-                Ok(get_request) => match std::fs::read(get_request.path.clone()) {
+                Ok(get_request) => match fs::read(get_request.path.clone()) {
                     Ok(file_data) => {
                         response_data = format!(
                             "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
@@ -154,8 +156,7 @@ fn handle_connection(mut client_stream: TcpStream, client_address: SocketAddr) {
 
             match serde_json::from_str::<'_, PostRequest>(request_data.as_str()) {
                 Ok(post_request) => {
-                    if let Err(e) = std::fs::write(post_request.path, post_request.data.as_slice())
-                    {
+                    if let Err(e) = fs::write(post_request.path, post_request.data.as_slice()) {
                         eprintln!("ERROR: Failed to write data for {request_method} request from client {client_address}: {e}");
                         response_data = "HTTP/1.1 404 NOT FOUND\r\n".as_bytes().to_owned();
                     } else {
