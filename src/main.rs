@@ -2,7 +2,7 @@ use serde::Deserialize;
 use std::{
     error::Error,
     io::{Read, Write},
-    net::{SocketAddr, TcpListener, TcpStream},
+    net::{SocketAddr, TcpListener, TcpStream, Ipv4Addr, Ipv6Addr},
 };
 
 fn main() {
@@ -63,6 +63,16 @@ fn parse_request<'a, 'b>(
 }
 
 fn handle_connection(mut client_stream: TcpStream, client_address: SocketAddr) {
+    let is_localhost = match client_address.ip() {
+        std::net::IpAddr::V4(ip) => ip == Ipv4Addr::LOCALHOST,
+        std::net::IpAddr::V6(ip) => ip == Ipv6Addr::LOCALHOST,
+    };
+
+    if !is_localhost {
+        eprintln!("ERROR: Non-local client {client_address} attempted connection");
+        return;
+    }
+
     let message = match read_message(&mut client_stream) {
         Ok(x) => x,
         Err(e) => {
