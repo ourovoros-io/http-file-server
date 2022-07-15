@@ -113,56 +113,55 @@ fn handle_connection(mut client_stream: TcpStream, client_address: SocketAddr) {
     let mut response_data: Vec<u8>;
 
     match request_method {
-        "GET" => {
-            #[derive(Debug, Deserialize)]
-            struct GetRequest {
-                path: String,
-            }
-
-            match serde_json::from_str::<'_, GetRequest>(request_data.as_str()) {
-                Ok(get_request) => match fs::read(get_request.path.clone()) {
-                    Ok(file_data) => {
-                        response_data = format!(
-                            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
-                            file_data.len(),
-                        )
-                        .as_bytes()
-                        .to_owned();
-
-                        response_data.extend(file_data);
-                    }
-
-                    Err(e) => {
-                        eprintln!(
-                            "ERROR: Failed to handle {request_method} request from client {client_address}: {e}"
-                        );
-                        response_data = "HTTP/1.1 404 NOT FOUND\r\n".as_bytes().to_owned();
-                    }
-                },
-
-                Err(e) => {
-                    eprintln!("ERROR: Failed to deserialize {request_method} request from client {client_address}: {e}");
-                    response_data = "HTTP/1.1 404 NOT FOUND\r\n".as_bytes().to_owned();
-                }
-            }
-        }
-
         "POST" => {
             #[derive(Debug, Deserialize)]
-            struct PostRequest {
-                path: String,
-                data: Vec<u8>,
+            #[serde(rename_all = "camelCase")]
+            pub enum RequestKind {
+                GetFileData,
+                SetFileData,
             }
 
-            match serde_json::from_str::<'_, PostRequest>(request_data.as_str()) {
-                Ok(post_request) => {
-                    if let Err(e) = fs::write(post_request.path, post_request.data.as_slice()) {
-                        eprintln!("ERROR: Failed to write data for {request_method} request from client {client_address}: {e}");
-                        response_data = "HTTP/1.1 404 NOT FOUND\r\n".as_bytes().to_owned();
-                    } else {
-                        response_data = "HTTP/1.1 200 OK\r\n".as_bytes().to_owned();
+            #[derive(Debug, Deserialize)]
+            struct RequestData {
+                kind: RequestKind,
+                path: String,
+                data: Option<Vec<u8>>,
+            }
+
+            match serde_json::from_str::<'_, RequestData>(request_data.as_str()) {
+                Ok(request_data) => match request_data.kind {
+                    RequestKind::GetFileData => match fs::read(request_data.path.clone()) {
+                        Ok(file_data) => {
+                            response_data = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
+                                file_data.len(),
+                            )
+                            .as_bytes()
+                            .to_owned();
+
+                            response_data.extend(file_data);
+                        }
+
+                        Err(e) => {
+                            eprintln!(
+                                "ERROR: Failed to handle {request_method} request from client {client_address}: {e}"
+                            );
+                            response_data = "HTTP/1.1 404 NOT FOUND\r\n".as_bytes().to_owned();
+                        }
+                    },
+
+                    RequestKind::SetFileData => {
+                        if let Err(e) = fs::write(
+                            request_data.path,
+                            request_data.data.unwrap_or(vec![]).as_slice(),
+                        ) {
+                            eprintln!("ERROR: Failed to write data for {request_method} request from client {client_address}: {e}");
+                            response_data = "HTTP/1.1 404 NOT FOUND\r\n".as_bytes().to_owned();
+                        } else {
+                            response_data = "HTTP/1.1 200 OK\r\n".as_bytes().to_owned();
+                        }
                     }
-                }
+                },
 
                 Err(e) => {
                     eprintln!("ERROR: Failed to deserialize {request_method} request from client {client_address}: {e}");
